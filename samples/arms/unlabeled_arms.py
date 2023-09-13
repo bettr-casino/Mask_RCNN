@@ -26,6 +26,7 @@ import skimage.draw
 import multiprocessing
 import tensorflow as tf
 import keras
+import argparse
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -51,6 +52,30 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 DATASET_PATH = os.path.join(ROOT_DIR, "datasets")
 ARMS_DATASET_PATH = os.path.join(DATASET_PATH, "arms")
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(
+    description='Train Mask R-CNN to segment ARMS plates.')
+parser.add_argument("command",
+                    metavar="<command>",
+                    help="'train'")
+parser.add_argument('--dataset', required=False,
+                    metavar="/path/to/arms/dataset/",
+                    help='Directory of the ARMS dataset')
+parser.add_argument('--weights', required=True,
+                    metavar="/path/to/weights.h5",
+                    help="Path to weights .h5 file or 'coco'")
+parser.add_argument('--logs', required=False,
+                    default=DEFAULT_LOGS_DIR,
+                    metavar="/path/to/logs/",
+                    help='Logs and checkpoints directory (default=logs/)')
+parser.add_argument('--epochs', required=False, type=int,
+                    default=30,
+                    help='Number of epochs to train for (default=30)')
+parser.add_argument('--steps', required=False, type=int,
+                    default=100,
+                    help='Number of steps in each epoch (default=100)')
+args = parser.parse_args()
+
 ############################################################
 #  Configurations
 ############################################################
@@ -71,7 +96,7 @@ class ArmsConfig(Config):
     NUM_CLASSES = 1 + 1  # Background + organism
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 100
+    STEPS_PER_EPOCH = args.steps
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.7
@@ -225,7 +250,7 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=30,
+                epochs=args.epochs,
                 layers='heads')
 
 def evaluate(model):
@@ -269,25 +294,25 @@ def detect(model):
 ############################################################
 
 if __name__ == '__main__':
-    import argparse
+    # import argparse
 
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description='Train Mask R-CNN to segment ARMS plates.')
-    parser.add_argument("command",
-                        metavar="<command>",
-                        help="'train'")
-    parser.add_argument('--dataset', required=False,
-                        metavar="/path/to/arms/dataset/",
-                        help='Directory of the ARMS dataset')
-    parser.add_argument('--weights', required=True,
-                        metavar="/path/to/weights.h5",
-                        help="Path to weights .h5 file or 'coco'")
-    parser.add_argument('--logs', required=False,
-                        default=DEFAULT_LOGS_DIR,
-                        metavar="/path/to/logs/",
-                        help='Logs and checkpoints directory (default=logs/)')
-    args = parser.parse_args()
+    # # Parse command line arguments
+    # parser = argparse.ArgumentParser(
+    #     description='Train Mask R-CNN to segment ARMS plates.')
+    # parser.add_argument("command",
+    #                     metavar="<command>",
+    #                     help="'train'")
+    # parser.add_argument('--dataset', required=False,
+    #                     metavar="/path/to/arms/dataset/",
+    #                     help='Directory of the ARMS dataset')
+    # parser.add_argument('--weights', required=True,
+    #                     metavar="/path/to/weights.h5",
+    #                     help="Path to weights .h5 file or 'coco'")
+    # parser.add_argument('--logs', required=False,
+    #                     default=DEFAULT_LOGS_DIR,
+    #                     metavar="/path/to/logs/",
+    #                     help='Logs and checkpoints directory (default=logs/)')
+    # args = parser.parse_args()
 
     # Validate arguments
     if args.command == "train":
