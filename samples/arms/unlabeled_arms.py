@@ -26,7 +26,6 @@ import skimage.draw
 import multiprocessing
 import tensorflow as tf
 import keras
-import argparse
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -44,6 +43,7 @@ from mrcnn import model as modellib, utils
 # Path to trained weights file
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 
+
 # Directory to save logs and model checkpoints, if not provided
 # through the command line argument --logs
 DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
@@ -51,30 +51,6 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 # Directory to arms dataset
 DATASET_PATH = os.path.join(ROOT_DIR, "datasets")
 ARMS_DATASET_PATH = os.path.join(DATASET_PATH, "arms")
-
-# Parse command line arguments
-parser = argparse.ArgumentParser(
-    description='Train Mask R-CNN to segment ARMS plates.')
-parser.add_argument("command",
-                    metavar="<command>",
-                    help="'train'")
-parser.add_argument('--dataset', required=False,
-                    metavar="/path/to/arms/dataset/",
-                    help='Directory of the ARMS dataset')
-parser.add_argument('--weights', required=True,
-                    metavar="/path/to/weights.h5",
-                    help="Path to weights .h5 file or 'coco'")
-parser.add_argument('--logs', required=False,
-                    default=DEFAULT_LOGS_DIR,
-                    metavar="/path/to/logs/",
-                    help='Logs and checkpoints directory (default=logs/)')
-parser.add_argument('--epochs', required=False, type=int,
-                    default=30,
-                    help='Number of epochs to train for (default=30)')
-parser.add_argument('--steps', required=False, type=int,
-                    default=100,
-                    help='Number of steps in each epoch (default=100)')
-args = parser.parse_args()
 
 ############################################################
 #  Configurations
@@ -91,12 +67,14 @@ class ArmsConfig(Config):
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
     IMAGES_PER_GPU = 1
+    #IMAGES_PER_GPU = 2
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 1  # Background + organism
 
-    # Number of training steps per epoch
-    STEPS_PER_EPOCH = args.steps
+    # Number of training steps per 
+    #STEPS_PER_EPOCH = 30
+    STEPS_PER_EPOCH = 100
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.7
@@ -120,6 +98,7 @@ class ArmsDataset(utils.Dataset):
         # Train or validation dataset?
         assert subset in ["train", "val", "all"]
         dataset_dir = os.path.join(dataset_dir, subset)
+        print("dataset_dir:", dataset_dir) #JB
 
         # Load annotations
         # Custom JSON format in the form:
@@ -140,12 +119,18 @@ class ArmsDataset(utils.Dataset):
 
         # each image has a directory in dataset folder
         # read json txt file for each image
+
         image_folders = os.listdir(dataset_dir)
+        #image_folders = [file for file in os.listdir(dataset_dir) if not file.startswith('.')] #JB
+        print("\nimage_folders =", image_folders,"\n") #JB
         annotations = []
         image_names = []
         for folder in image_folders:
+            print("folder:", folder) #JB
             current_path = os.path.join(dataset_dir, folder)
-            annotations.append(json.load(open(os.path.join(current_path, folder + "_SUMMARY.txt"))))
+            #annotations.append(json.load(open(os.path.join(current_path, folder + "_SUMMARY.txt"))))
+            annotations.append(json.load(open(os.path.join(current_path, folder + ".json"))))
+
             image_names.append(folder)
 
         # Add images
@@ -193,6 +178,100 @@ class ArmsDataset(utils.Dataset):
                 path=image_path,
                 width=width, height=height,
                 polygons=polygons)
+
+    def load_images(self, dataset_dir):
+            """Load a subset of the ARMS dataset.
+            dataset_dir: Root directory of the dataset.
+            subset: Subset to load: train or val
+            """
+            # Add classes. We have only one class to add.
+            # First argument is for dataset source name.
+            self.add_class("arms", 1, "organism")
+
+            # Train or validation dataset?
+            # assert subset in ["train", "val", "all"] 
+            # dataset_dir = os.path.join(dataset_dir, subset)
+            dataset_dir = os.path.join(dataset_dir)
+            print("dataset_dir:", dataset_dir) #JB
+
+            # Load annotations
+            # Custom JSON format in the form:
+            # { 
+            #   "originalJpeg": "PLATE_GUA-02_2014_B_011.JPG",
+            #   "rotationDegrees": 90,
+            #   "individuals":
+            #   [
+            #       {
+            #           "label": "creamDot",
+            #           "rgb": [238, 224, 156],
+            #           "xs": [1582,1573,1552,1537,1522,1530,1552,1567],
+            #           "ys": [2605,2626,2635,2620,2602,2583,2581,2594]
+            #       },
+            #   ]
+            # }
+            # We mostly care about the x and y coordinates of each region
+
+            # each image has a directory in dataset folder
+            # read json txt file for each image
+
+            image_folders = os.listdir(dataset_dir)
+            #image_folders = [file for file in os.listdir(dataset_dir) if not file.startswith('.')] #JB
+            print("\nimage_folders =", image_folders,"\n") #JB
+            annotations = []
+            image_names = []
+            for folder in image_folders:
+                print("folder:", folder) #JB
+                current_path = os.path.join(dataset_dir, folder)
+                #annotations.append(json.load(open(os.path.join(current_path, folder + "_SUMMARY.txt"))))
+                annotations.append(json.load(open(os.path.join(current_path, folder + ".json"))))
+
+                image_names.append(folder)
+
+            # Add images
+            for i in range(len(annotations)):
+                a = annotations[i]
+
+                # Get the x, y coordinates of points of the polygons that make up
+                # the outline of each object instance.
+                polygons = [individual for individual in a["individuals"]]
+
+                # load_mask() needs the image size to convert polygons to masks.
+                # Unfortunately, VIA doesn't include it in JSON, so we must read
+                # the image. This is only managable since the dataset is tiny.
+                image_path = os.path.join(dataset_dir, image_names[i])
+                image_path = os.path.join(image_path, image_names[i] + ".JPG")
+                image = skimage.io.imread(image_path)
+                height, width = image.shape[:2]
+
+                #print(image_names[i])
+                #print(a["rotationDegrees"])
+                #print(width)
+                #print(height)
+
+                # correct polygon orientation
+                #if a["rotationDegrees"] == 0:
+                if a["rotationDegrees"] == 90:
+                    for polygon in polygons:
+                        temp = polygon['xs']
+                        polygon['xs'] = polygon['ys']
+                        polygon['ys'] = temp
+                        for x in range(len(polygon['xs'])):
+                            polygon['xs'][x] = (width - 1) - polygon['xs'][x]
+                # elif a["rotationDegrees"] == 180:
+                elif a["rotationDegrees"] == 270:
+                    for polygon in polygons:
+                        temp = polygon['xs']
+                        polygon['xs'] = polygon['ys']
+                        polygon['ys'] = temp
+                        for y in range(len(polygon['ys'])):
+                            polygon['ys'][y] = (height - 1) - polygon['ys'][y]
+
+                self.add_image(
+                    "arms",
+                    image_id=image_names[i],  # use folder name as a unique image id
+                    path=image_path,
+                    width=width, height=height,
+                    polygons=polygons)
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -250,7 +329,8 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=args.epochs,
+                epochs=60,
+                #epochs = 10,
                 layers='heads')
 
 def evaluate(model):
@@ -294,25 +374,31 @@ def detect(model):
 ############################################################
 
 if __name__ == '__main__':
-    # import argparse
+    import argparse
 
-    # # Parse command line arguments
-    # parser = argparse.ArgumentParser(
-    #     description='Train Mask R-CNN to segment ARMS plates.')
-    # parser.add_argument("command",
-    #                     metavar="<command>",
-    #                     help="'train'")
-    # parser.add_argument('--dataset', required=False,
-    #                     metavar="/path/to/arms/dataset/",
-    #                     help='Directory of the ARMS dataset')
-    # parser.add_argument('--weights', required=True,
-    #                     metavar="/path/to/weights.h5",
-    #                     help="Path to weights .h5 file or 'coco'")
-    # parser.add_argument('--logs', required=False,
-    #                     default=DEFAULT_LOGS_DIR,
-    #                     metavar="/path/to/logs/",
-    #                     help='Logs and checkpoints directory (default=logs/)')
-    # args = parser.parse_args()
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Train Mask R-CNN to segment ARMS plates.')
+    parser.add_argument("command",
+                        metavar="<command>",
+                        help="'train'")
+    parser.add_argument('--dataset', required=False,
+                        metavar="/path/to/arms/dataset/",
+                        help='Directory of the ARMS dataset')
+    parser.add_argument('--weights', required=True,
+                        metavar="/path/to/weights.h5",
+                        help="Path to weights .h5 file or 'coco'")
+    parser.add_argument('--logs', required=False,
+                        default=DEFAULT_LOGS_DIR,
+                        metavar="/path/to/logs/",
+                        help='Logs and checkpoints directory (default=logs/)')
+    parser.add_argument('--epochs', required = False, default = 30, type = int,
+                    help="Number of epochs to train for (default: 30)")
+
+    parser.add_argument('--steps', required = False, default = 100, type = int,
+                    help="Number of steps in each epoch (default: 100)")
+
+    args = parser.parse_args()
 
     # Validate arguments
     if args.command == "train":
@@ -325,6 +411,8 @@ if __name__ == '__main__':
     # Configurations
     if args.command == "train":
         config = ArmsConfig()
+        config.STEPS_PER_EPOCH = args.steps
+
     else:
         class InferenceConfig(ArmsConfig):
             # Set batch size to 1 since we'll be running inference on
@@ -370,7 +458,31 @@ if __name__ == '__main__':
 
     # Train or evaluate
     if args.command == "train":
+
+        def train(model):
+            """Train the model."""
+            # Training dataset.
+            dataset_train = ArmsDataset()
+            dataset_train.load_arms(args.dataset, "train")
+            dataset_train.prepare()
+
+            # Validation dataset
+            dataset_val = ArmsDataset()
+            dataset_val.load_arms(args.dataset, "val")
+            dataset_val.prepare()
+
+            # *** This training schedule is an example. Update to your needs ***
+            # Since we're using a very small dataset, and starting from
+            # COCO trained weights, we don't need to train too long. Also,
+            # no need to train all layers, just the heads should do it.
+            print("Training network heads")
+            model.train(dataset_train, dataset_val,
+                        learning_rate=config.LEARNING_RATE,
+                        epochs=args.epochs,
+                        layers='heads')
+
         train(model)
+
     elif args.command == "val":
         evaluate(model)
     else:
