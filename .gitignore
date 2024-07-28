@@ -3,3 +3,7 @@ logs/
 **/.ipynb_checkpoints/
 mask_rcnn_coco.h5
 samples/arms/__pycache__/
+*.pyc
+*.egg
+/mask_rcnn.egg-info
+/build
